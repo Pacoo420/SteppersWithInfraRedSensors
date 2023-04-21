@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Stepper.h>
+#include "WiFi.h"
 
 //X axis sensor 
 #define IR1_PIN 32
@@ -40,8 +41,16 @@ int value;
 int homingState = 0;
 int distance_ir = 0;
 
-int currentMessage;
-int lastMessage;
+String  currentMessage;
+String lastmessage = "";
+
+const char *ssid = "iPhone užívateľa Adrián";
+const char *password = "hello123";
+
+const uint16_t port = 2323;
+const char *host = "172.20.10.4";
+
+WiFiServer server(port);
 
 Stepper motorX(stepPerRevolution, xIN1, xIN3, xIN2, xIN4);
 Stepper motorY(stepPerRevolution, yIN1, yIN3, yIN2, yIN4);
@@ -57,9 +66,17 @@ void setup(){
   motorX.setSpeed(5); //was 25
   motorY.setSpeed(5);
   motorZ.setSpeed(5);
-
+  
   //debug monitor setup
   Serial.begin(9600);
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Trying to connect to the server");
+  }
+  Serial.print("WiFi connected with IP: ");
+  Serial.println(WiFi.localIP());
 }
 
 int IRSensor(int IR_PIN){
@@ -72,7 +89,6 @@ void moveMotorX(){
   while (spinMotorX == true){
     int sensorReading = analogRead(A0);
     value = IRSensor(IR1_PIN);
-    Serial.println(value);
     motorX.step(stepPerRevolution / 100);
 
     if(value<=10){
@@ -85,7 +101,6 @@ void moveMotorX(){
 void moveMotorY(){
   while (spinMotorY == true){
     value = IRSensor(IR2_PIN);
-    Serial.println(value);
     motorY.step(stepPerRevolution / 100);
 
     if(value<=10){
@@ -98,21 +113,12 @@ void moveMotorY(){
 void moveMotorZ(){
   while (spinMotorZ == true){
     value = IRSensor(IR3_PIN);
-    Serial.println(value);
     motorZ.step(stepPerRevolution / 100);
 
     if(value<=10){
       spinMotorZ = false;
       homing = false;
     }
-  }
-}
-
-void readMessage(){
-  currentMessage = Serial.read();
-
-  if(currentMessage == 'Y'){
-    homing = true;
   }
 }
 
@@ -135,7 +141,36 @@ void motorControl(){
   }
 }
 
+void readMessage(WiFiClient* client){
+  if (!client->connect(host, port)) {
+    Serial.println("Connection to host failed");
+    delay(1000);
+    return;
+  }
+  Serial.println("CONNECTED TO SERVER");
+
+  while(true){
+    while(client->available()){
+      currentMessage = client->readStringUntil(';');
+      currentMessage.trim();
+      if(currentMessage.substring(0,1) == "$"){
+        currentMessage = currentMessage.substring(1,-1);
+      }
+      
+      if(currentMessage == "HOME"){
+        homing = true;
+      }
+
+      if(lastmessage != currentMessage){
+        motorControl();
+      }
+      lastmessage = currentMessage;
+    }
+  }
+}
+
+
 void loop(){
-  readMessage();
-  motorControl();
+  WiFiClient client;
+  readMessage(&client);
 }
